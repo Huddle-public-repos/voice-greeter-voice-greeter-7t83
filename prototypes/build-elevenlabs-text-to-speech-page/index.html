@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Speak – ElevenLabs TTS</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: #f3f4f6; color: #111827; padding: 16px;
+  }
+  main {
+    width: 100%; max-width: 560px; background: #fff; border-radius: 16px;
+    padding: 20px; box-shadow: 0 4px 24px rgba(0,0,0,.08);
+  }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 16px; color: #6b7280; font-size: .9rem; }
+  textarea {
+    width: 100%; min-height: 120px; resize: vertical; padding: 12px; font: inherit; font-size: 16px;
+    border: 1px solid #d1d5db; border-radius: 10px; background: #fff; color: inherit;
+  }
+  textarea:focus { outline: 2px solid #2563eb; border-color: transparent; }
+  .row { display: flex; align-items: center; justify-content: space-between; margin: 8px 0 12px; font-size: .85rem; color: #6b7280; }
+  button {
+    width: 100%; padding: 14px; font-size: 1.05rem; font-weight: 600; border: 0; border-radius: 10px;
+    background: #2563eb; color: #fff; cursor: pointer;
+  }
+  button:disabled { opacity: .6; cursor: wait; }
+  #status { min-height: 1.4em; margin: 12px 0 0; font-size: .9rem; color: #374151; }
+  #status.error { color: #b91c1c; }
+  audio { width: 100%; margin-top: 12px; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #111827; color: #f9fafb; }
+    main { background: #1f2937; }
+    textarea { background: #111827; border-color: #374151; }
+    #status { color: #d1d5db; } #status.error { color: #fca5a5; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Text to speech</h1>
+  <p class="sub">Type a sentence, press Speak, and listen.</p>
+  <form id="form">
+    <label for="text" hidden>Text to speak</label>
+    <textarea id="text" maxlength="1000" placeholder="Type a sentence to hear it spoken…">Hello! This is a quick test of a natural-sounding voice.</textarea>
+    <div class="row"><span>Max 1000 characters</span><span id="count">0</span></div>
+    <button id="speak" type="submit">Speak</button>
+  </form>
+  <p id="status" role="status" aria-live="polite"></p>
+  <audio id="player" controls hidden playsinline></audio>
+</main>
+<script>
+(() => {
+  const form = document.getElementById('form');
+  const textEl = document.getElementById('text');
+  const countEl = document.getElementById('count');
+  const btn = document.getElementById('speak');
+  const statusEl = document.getElementById('status');
+  const player = document.getElementById('player');
+  let objectUrl = null;
+
+  function setStatus(msg, isError) {
+    statusEl.textContent = msg || '';
+    statusEl.className = isError ? 'error' : '';
+  }
+  function updateCount() { countEl.textContent = textEl.value.length; }
+  textEl.addEventListener('input', updateCount);
+  updateCount();
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const text = textEl.value.trim();
+    if (!text) { setStatus('Please type something first.', true); return; }
+
+    btn.disabled = true;
+    btn.textContent = 'Generating…';
+    setStatus('Generating audio…');
+
+    // Unlock audio playback inside the user gesture (needed on iOS Safari).
+    player.hidden = false;
+    try { player.muted = true; const p = player.play(); if (p) p.catch(() => {}); player.pause(); player.muted = false; } catch (_) {}
+
+    try {
+      const res = await fetch('/api/speak', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) {
+        let msg = `Request failed (${res.status}).`;
+        try { const j = await res.json(); if (j.error) msg = j.error; } catch (_) {}
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      objectUrl = URL.createObjectURL(blob);
+      player.src = objectUrl;
+      player.hidden = false;
+      try {
+        await player.play();
+        setStatus('Playing…');
+      } catch (_) {
+        setStatus('Audio ready — press play below.');
+      }
+    } catch (err) {
+      player.hidden = true;
+      setStatus(err.message || 'Something went wrong.', true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Speak';
+    }
+  });
+
+  player.addEventListener('ended', () => setStatus('Done.'));
+})();
+</script>
+</body>
+</html>
